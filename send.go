@@ -140,6 +140,8 @@ type SendRequestExtra struct {
 	Timeout time.Duration
 	// When sending media to newsletters, the Handle field returned by the file upload.
 	MediaHandle string
+	// When sending status message you can specify the recipients
+	Participants []types.JID
 }
 
 // SendMessage sends the given message.
@@ -294,7 +296,7 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 	var data []byte
 	switch to.Server {
 	case types.GroupServer, types.BroadcastServer:
-		phash, data, err = cli.sendGroup(ctx, to, ownID, req.ID, message, &resp.DebugTimings, botNode)
+		phash, data, err = cli.sendGroup(ctx, to, ownID, req.ID, message, &resp.DebugTimings, botNode, req.Participants)
 	case types.DefaultUserServer:
 		if req.Peer {
 			data, err = cli.sendPeerMessage(to, req.ID, message, &resp.DebugTimings)
@@ -607,8 +609,7 @@ func (cli *Client) sendNewsletter(to types.JID, id types.MessageID, message *waE
 	return data, nil
 }
 
-func (cli *Client) sendGroup(ctx context.Context, to, ownID types.JID, id types.MessageID, message *waE2E.Message, timings *MessageDebugTimings, botNode *waBinary.Node) (string, []byte, error) {
-	var participants []types.JID
+func (cli *Client) sendGroup(ctx context.Context, to, ownID types.JID, id types.MessageID, message *waE2E.Message, timings *MessageDebugTimings, botNode *waBinary.Node, participants []types.JID) (string, []byte, error) {
 	var err error
 	start := time.Now()
 	if to.Server == types.GroupServer {
@@ -616,7 +617,7 @@ func (cli *Client) sendGroup(ctx context.Context, to, ownID types.JID, id types.
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to get group members: %w", err)
 		}
-	} else {
+	} else if len(participants) == 0 {
 		// TODO use context
 		participants, err = cli.getBroadcastListParticipants(to)
 		if err != nil {

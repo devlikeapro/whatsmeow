@@ -587,8 +587,8 @@ func (int *DangerousInternalClient) SendNewsletter(to types.JID, id types.Messag
 	return int.c.sendNewsletter(to, id, message, mediaID, timings)
 }
 
-func (int *DangerousInternalClient) SendGroup(ctx context.Context, to, ownID types.JID, id types.MessageID, message *waE2E.Message, timings *MessageDebugTimings, botNode *waBinary.Node) (string, []byte, error) {
-	return int.c.sendGroup(ctx, to, ownID, id, message, timings, botNode)
+func (int *DangerousInternalClient) SendGroup(ctx context.Context, to, ownID types.JID, id types.MessageID, message *waE2E.Message, timings *MessageDebugTimings, botNode *waBinary.Node, participants []types.JID) (string, []byte, error) {
+	return int.c.sendGroup(ctx, to, ownID, id, message, timings, botNode, participants)
 }
 
 func (int *DangerousInternalClient) SendPeerMessage(to types.JID, id types.MessageID, message *waE2E.Message, timings *MessageDebugTimings) ([]byte, error) {
