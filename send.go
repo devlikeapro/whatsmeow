@@ -148,6 +148,9 @@ type SendRequestExtra struct {
 	MediaHandle string
 
 	Meta *types.MsgMetaInfo
+
+	// When sending status message you can specify the recipients
+	Participants []types.JID
 }
 
 // SendMessage sends the given message.
@@ -301,10 +304,14 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 				extraParams.addressingMode = types.AddressingModePN
 			}
 		} else {
-			groupParticipants, err = cli.getBroadcastListParticipants(ctx, to)
-			if err != nil {
-				err = fmt.Errorf("failed to get broadcast list members: %w", err)
-				return
+			if len(req.Participants) != 0 {
+				groupParticipants = req.Participants
+			} else {
+				groupParticipants, err = cli.getBroadcastListParticipants(ctx, to)
+				if err != nil {
+					err = fmt.Errorf("failed to get broadcast list members: %w", err)
+					return
+				}
 			}
 		}
 		resp.DebugTimings.GetParticipants = time.Since(start)
