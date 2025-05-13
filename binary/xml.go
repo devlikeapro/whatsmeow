@@ -18,7 +18,7 @@ import (
 // Options to control how Node.XMLString behaves.
 var (
 	IndentXML            = false
-	MaxBytesToPrintAsHex = 128
+	MaxBytesToPrintAsHex = 128 * 1024
 )
 
 // XMLString converts the Node to its XML representation
