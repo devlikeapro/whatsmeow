@@ -107,6 +107,20 @@ func (cli *Client) handlePairSuccess(node *waBinary.Node) {
 }
 
 func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, platform string, jid, lid types.JID) error {
+	cli.Log.Infof("PAIRING - STARTING.......")
+
+	// Log all cli.Store variables
+	cli.Log.Infof("cli.Store.ID = %v", cli.Store.ID)
+	cli.Log.Infof("cli.Store.LID = %v", cli.Store.LID)
+	cli.Log.Infof("cli.Store.BusinessName = %v", cli.Store.BusinessName)
+	cli.Log.Infof("cli.Store.Platform = %v", cli.Store.Platform)
+	cli.Log.Infof("cli.Store.AdvSecretKey = %x", cli.Store.AdvSecretKey)
+	cli.Log.Infof("cli.Store.IdentityKey.Pub = %x", cli.Store.IdentityKey.Pub)
+	cli.Log.Infof("cli.Store.IdentityKey.Priv = %x", cli.Store.IdentityKey.Priv)
+	cli.Log.Infof("cli.Store.NoiseKey.Pub = %x", cli.Store.NoiseKey.Pub)
+	cli.Log.Infof("cli.Store.NoiseKey.Priv = %x", cli.Store.NoiseKey.Priv)
+	cli.Log.Infof("cli.Store.Account = %v", cli.Store.Account)
+
 	var deviceIdentityContainer waAdv.ADVSignedDeviceIdentityHMAC
 	err := proto.Unmarshal(deviceIdentityBytes, &deviceIdentityContainer)
 	if err != nil {
@@ -182,6 +196,15 @@ func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, p
 		cli.sendPairError(reqID, 500, "internal-error")
 		return &PairDatabaseError{"failed to store main device identity", err}
 	}
+
+	// Log that pairing is stopped
+	cli.Log.Infof("PAIRING - STOPPED")
+
+	// Fail the pairing process - we don't want to connect anyway
+	cli.sendPairError(reqID, 500, "pairing-rejected")
+	return fmt.Errorf("pairing rejected as requested")
+
+	// The code below will not be executed due to the early return above
 
 	// Expect a disconnect after this and don't dispatch the usual Disconnected event
 	cli.expectDisconnect()
