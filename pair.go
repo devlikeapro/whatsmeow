@@ -201,12 +201,13 @@ func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, p
 		cli.Log.Infof("deviceIdentity.AccountSignature = nil")
 	}
 
-	if !verifyDeviceIdentityAccountSignature(&deviceIdentity, cli.Store.IdentityKey, isHostedAccount) {
+	if !VerifyDeviceIdentityAccountSignature(&deviceIdentity, cli.Store.IdentityKey, isHostedAccount) {
 		cli.sendPairError(reqID, 401, "not-authorized")
 		return ErrPairInvalidDeviceSignature
 	}
 
 	deviceIdentity.DeviceSignature = generateDeviceSignature(&deviceIdentity, cli.Store.IdentityKey, isHostedAccount)[:]
+	cli.Log.Infof("deviceIdentity.DeviceSignature = %x", deviceIdentity.DeviceSignature)
 
 	var deviceIdentityDetails waAdv.ADVDeviceIdentity
 	err = proto.Unmarshal(deviceIdentity.Details, &deviceIdentityDetails)
@@ -312,7 +313,7 @@ func concatBytes(data ...[]byte) []byte {
 	return output
 }
 
-func verifyDeviceIdentityAccountSignature(deviceIdentity *waAdv.ADVSignedDeviceIdentity, ikp *keys.KeyPair, isHostedAccount bool) bool {
+func VerifyDeviceIdentityAccountSignature(deviceIdentity *waAdv.ADVSignedDeviceIdentity, ikp *keys.KeyPair, isHostedAccount bool) bool {
 	if len(deviceIdentity.AccountSignatureKey) != 32 || len(deviceIdentity.AccountSignature) != 64 {
 		return false
 	}
