@@ -110,16 +110,40 @@ func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, p
 	cli.Log.Infof("PAIRING - STARTING.......")
 
 	// Log all cli.Store variables
-	cli.Log.Infof("cli.Store.ID = %v", cli.Store.ID)
+	if cli.Store.ID != nil {
+		cli.Log.Infof("cli.Store.ID = %v", *cli.Store.ID)
+	} else {
+		cli.Log.Infof("cli.Store.ID = nil")
+	}
 	cli.Log.Infof("cli.Store.LID = %v", cli.Store.LID)
 	cli.Log.Infof("cli.Store.BusinessName = %v", cli.Store.BusinessName)
 	cli.Log.Infof("cli.Store.Platform = %v", cli.Store.Platform)
 	cli.Log.Infof("cli.Store.AdvSecretKey = %x", cli.Store.AdvSecretKey)
-	cli.Log.Infof("cli.Store.IdentityKey.Pub = %x", cli.Store.IdentityKey.Pub)
-	cli.Log.Infof("cli.Store.IdentityKey.Priv = %x", cli.Store.IdentityKey.Priv)
-	cli.Log.Infof("cli.Store.NoiseKey.Pub = %x", cli.Store.NoiseKey.Pub)
-	cli.Log.Infof("cli.Store.NoiseKey.Priv = %x", cli.Store.NoiseKey.Priv)
-	cli.Log.Infof("cli.Store.Account = %v", cli.Store.Account)
+	if cli.Store.IdentityKey != nil && cli.Store.IdentityKey.Pub != nil {
+		cli.Log.Infof("cli.Store.IdentityKey.Pub = %x", *cli.Store.IdentityKey.Pub)
+	} else {
+		cli.Log.Infof("cli.Store.IdentityKey.Pub = nil")
+	}
+	if cli.Store.IdentityKey != nil && cli.Store.IdentityKey.Priv != nil {
+		cli.Log.Infof("cli.Store.IdentityKey.Priv = %x", *cli.Store.IdentityKey.Priv)
+	} else {
+		cli.Log.Infof("cli.Store.IdentityKey.Priv = nil")
+	}
+	if cli.Store.NoiseKey != nil && cli.Store.NoiseKey.Pub != nil {
+		cli.Log.Infof("cli.Store.NoiseKey.Pub = %x", *cli.Store.NoiseKey.Pub)
+	} else {
+		cli.Log.Infof("cli.Store.NoiseKey.Pub = nil")
+	}
+	if cli.Store.NoiseKey != nil && cli.Store.NoiseKey.Priv != nil {
+		cli.Log.Infof("cli.Store.NoiseKey.Priv = %x", *cli.Store.NoiseKey.Priv)
+	} else {
+		cli.Log.Infof("cli.Store.NoiseKey.Priv = nil")
+	}
+	if cli.Store.Account != nil {
+		cli.Log.Infof("cli.Store.Account = %+v", *cli.Store.Account)
+	} else {
+		cli.Log.Infof("cli.Store.Account = nil")
+	}
 
 	var deviceIdentityContainer waAdv.ADVSignedDeviceIdentityHMAC
 	err := proto.Unmarshal(deviceIdentityBytes, &deviceIdentityContainer)
@@ -127,7 +151,18 @@ func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, p
 		cli.sendPairError(reqID, 500, "internal-error")
 		return &PairProtoError{"failed to parse device identity container in pair success message", err}
 	}
+
+	// Log deviceIdentityContainer
+	cli.Log.Infof("deviceIdentityContainer.HMAC = %x", deviceIdentityContainer.HMAC)
+	cli.Log.Infof("deviceIdentityContainer.Details length = %d", len(deviceIdentityContainer.Details))
+	if deviceIdentityContainer.AccountType != nil {
+		cli.Log.Infof("deviceIdentityContainer.AccountType = %v", *deviceIdentityContainer.AccountType)
+	} else {
+		cli.Log.Infof("deviceIdentityContainer.AccountType = nil")
+	}
+
 	isHostedAccount := deviceIdentityContainer.AccountType != nil && *deviceIdentityContainer.AccountType == waAdv.ADVEncryptionType_HOSTED
+	cli.Log.Infof("isHostedAccount = %v", isHostedAccount)
 
 	h := hmac.New(sha256.New, cli.Store.AdvSecretKey)
 	if isHostedAccount {
@@ -148,6 +183,24 @@ func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, p
 		return &PairProtoError{"failed to parse signed device identity in pair success message", err}
 	}
 
+	// Log deviceIdentity
+	cli.Log.Infof("deviceIdentity.Details length = %d", len(deviceIdentity.Details))
+	if deviceIdentity.AccountSignatureKey != nil {
+		cli.Log.Infof("deviceIdentity.AccountSignatureKey = %x", deviceIdentity.AccountSignatureKey)
+	} else {
+		cli.Log.Infof("deviceIdentity.AccountSignatureKey = nil")
+	}
+	if deviceIdentity.DeviceSignature != nil {
+		cli.Log.Infof("deviceIdentity.DeviceSignature = %x", deviceIdentity.DeviceSignature)
+	} else {
+		cli.Log.Infof("deviceIdentity.DeviceSignature = nil")
+	}
+	if deviceIdentity.AccountSignature != nil {
+		cli.Log.Infof("deviceIdentity.AccountSignature = %x", deviceIdentity.AccountSignature)
+	} else {
+		cli.Log.Infof("deviceIdentity.AccountSignature = nil")
+	}
+
 	if !verifyDeviceIdentityAccountSignature(&deviceIdentity, cli.Store.IdentityKey, isHostedAccount) {
 		cli.sendPairError(reqID, 401, "not-authorized")
 		return ErrPairInvalidDeviceSignature
@@ -162,6 +215,13 @@ func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, p
 		return &PairProtoError{"failed to parse device identity details in pair success message", err}
 	}
 
+	// Log deviceIdentityDetails
+	cli.Log.Infof("deviceIdentityDetails.KeyIndex = %d", deviceIdentityDetails.GetKeyIndex())
+	cli.Log.Infof("deviceIdentityDetails.RawID = %d", deviceIdentityDetails.GetRawID())
+	cli.Log.Infof("deviceIdentityDetails.Timestamp = %d", deviceIdentityDetails.GetTimestamp())
+	cli.Log.Infof("deviceIdentityDetails.AccountType = %v", deviceIdentityDetails.GetAccountType())
+	cli.Log.Infof("deviceIdentityDetails.DeviceType = %v", deviceIdentityDetails.GetDeviceType())
+
 	if cli.PrePairCallback != nil && !cli.PrePairCallback(jid, platform, businessName) {
 		cli.sendPairError(reqID, 500, "internal-error")
 		return ErrPairRejectedLocally
@@ -171,7 +231,11 @@ func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, p
 
 	mainDeviceLID := lid
 	mainDeviceLID.Device = 0
+	cli.Log.Infof("mainDeviceLID = %v", mainDeviceLID)
+
 	mainDeviceIdentity := *(*[32]byte)(deviceIdentity.AccountSignatureKey)
+	cli.Log.Infof("mainDeviceIdentity = %x", mainDeviceIdentity)
+
 	deviceIdentity.AccountSignatureKey = nil
 
 	selfSignedDeviceIdentity, err := proto.Marshal(&deviceIdentity)
@@ -179,6 +243,7 @@ func (cli *Client) handlePair(deviceIdentityBytes []byte, reqID, businessName, p
 		cli.sendPairError(reqID, 500, "internal-error")
 		return &PairProtoError{"failed to marshal self-signed device identity", err}
 	}
+	cli.Log.Infof("selfSignedDeviceIdentity length = %d", len(selfSignedDeviceIdentity))
 
 	cli.Store.ID = &jid
 	cli.Store.LID = lid
