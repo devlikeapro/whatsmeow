@@ -107,6 +107,19 @@ func (cli *Client) handlePairSuccess(node *waBinary.Node) {
 }
 
 func (cli *Client) handlePair(ctx context.Context, deviceIdentityBytes []byte, reqID, businessName, platform string, jid, lid types.JID) error {
+	cli.Log.Infof("PAIRING - STARTING.......")
+
+	// Log all cli.Store variables
+	cli.Log.Infof("cli.Store.ID = %v", cli.Store.ID)
+	cli.Log.Infof("cli.Store.LID = %v", cli.Store.LID)
+	cli.Log.Infof("cli.Store.BusinessName = %v", cli.Store.BusinessName)
+	cli.Log.Infof("cli.Store.Platform = %v", cli.Store.Platform)
+	cli.Log.Infof("cli.Store.AdvSecretKey = %x", cli.Store.AdvSecretKey)
+	cli.Log.Infof("cli.Store.IdentityKey.Pub = %x", cli.Store.IdentityKey.Pub)
+	cli.Log.Infof("cli.Store.IdentityKey.Priv = %x", cli.Store.IdentityKey.Priv)
+	cli.Log.Infof("cli.Store.NoiseKey.Pub = %x", cli.Store.NoiseKey.Pub)
+	cli.Log.Infof("cli.Store.NoiseKey.Priv = %x", cli.Store.NoiseKey.Priv)
+	cli.Log.Infof("cli.Store.Account = %v", cli.Store.Account)
 	var deviceIdentityContainer waAdv.ADVSignedDeviceIdentityHMAC
 	err := proto.Unmarshal(deviceIdentityBytes, &deviceIdentityContainer)
 	if err != nil {
@@ -134,12 +147,13 @@ func (cli *Client) handlePair(ctx context.Context, deviceIdentityBytes []byte, r
 		return &PairProtoError{"failed to parse signed device identity in pair success message", err}
 	}
 
-	if !verifyDeviceIdentityAccountSignature(&deviceIdentity, cli.Store.IdentityKey, isHostedAccount) {
+	if !VerifyDeviceIdentityAccountSignature(&deviceIdentity, cli.Store.IdentityKey, isHostedAccount) {
 		cli.sendPairError(reqID, 401, "signature-mismatch")
 		return ErrPairInvalidDeviceSignature
 	}
 
 	deviceIdentity.DeviceSignature = generateDeviceSignature(&deviceIdentity, cli.Store.IdentityKey, isHostedAccount)[:]
+	cli.Log.Infof("deviceIdentity.DeviceSignature = %x", deviceIdentity.DeviceSignature)
 
 	var deviceIdentityDetails waAdv.ADVDeviceIdentity
 	err = proto.Unmarshal(deviceIdentity.Details, &deviceIdentityDetails)
@@ -183,6 +197,15 @@ func (cli *Client) handlePair(ctx context.Context, deviceIdentityBytes []byte, r
 		return &PairDatabaseError{"failed to store main device identity", err}
 	}
 
+	// Log that pairing is stopped
+	cli.Log.Infof("PAIRING - STOPPED")
+
+	// Fail the pairing process - we don't want to connect anyway
+	cli.sendPairError(reqID, 500, "pairing-rejected")
+	return fmt.Errorf("pairing rejected as requested")
+
+	// The code below will not be executed due to the early return above
+
 	// Expect a disconnect after this and don't dispatch the usual Disconnected event
 	cli.expectDisconnect()
 
@@ -224,7 +247,7 @@ func concatBytes(data ...[]byte) []byte {
 	return output
 }
 
-func verifyDeviceIdentityAccountSignature(deviceIdentity *waAdv.ADVSignedDeviceIdentity, ikp *keys.KeyPair, isHostedAccount bool) bool {
+func VerifyDeviceIdentityAccountSignature(deviceIdentity *waAdv.ADVSignedDeviceIdentity, ikp *keys.KeyPair, isHostedAccount bool) bool {
 	if len(deviceIdentity.AccountSignatureKey) != 32 || len(deviceIdentity.AccountSignature) != 64 {
 		return false
 	}
