@@ -97,7 +97,7 @@ func (cli *Client) applyAppStatePatches(
 	fullSync bool,
 	eventsToDispatch *[]any,
 ) (appstate.HashState, error) {
-	mutations, newState, err := cli.appStateProc.DecodePatches(ctx, patches, state, true)
+	mutations, newState, err := cli.appStateProc.DecodePatches(ctx, patches, state, false)
 	if err != nil {
 		if errors.Is(err, appstate.ErrKeyNotFound) {
 			go cli.requestMissingAppStateKeys(context.WithoutCancel(ctx), patches)
