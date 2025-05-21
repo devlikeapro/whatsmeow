@@ -232,11 +232,14 @@ func verifyDeviceIdentityAccountSignature(deviceIdentity *waAdv.ADVSignedDeviceI
 	signatureKey := ecc.NewDjbECPublicKey(*(*[32]byte)(deviceIdentity.AccountSignatureKey))
 	signature := *(*[64]byte)(deviceIdentity.AccountSignature)
 
-	prefix := AdvPrefixAccountSignature
+	var message []byte
 	if isHostedAccount {
-		prefix = AdvHostedPrefixDeviceIdentityAccountSignature
+		//message = concatBytes(AdvHostedPrefixDeviceIdentityAccountSignature, deviceIdentity.Details, ikp.Pub[:], deviceIdentity.AccountSignatureKey)
+		// Use the same for now
+		message = concatBytes(AdvPrefixAccountSignature, deviceIdentity.Details, ikp.Pub[:])
+	} else {
+		message = concatBytes(AdvPrefixAccountSignature, deviceIdentity.Details, ikp.Pub[:])
 	}
-	message := concatBytes(prefix, deviceIdentity.Details, ikp.Pub[:])
 	return ecc.VerifySignature(signatureKey, message, signature)
 }
 
