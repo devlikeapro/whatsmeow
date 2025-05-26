@@ -200,12 +200,6 @@ func (cli *Client) handlePair(ctx context.Context, deviceIdentityBytes []byte, r
 	// Log that pairing is stopped
 	cli.Log.Infof("PAIRING - STOPPED")
 
-	// Fail the pairing process - we don't want to connect anyway
-	cli.sendPairError(reqID, 500, "pairing-rejected")
-	return fmt.Errorf("pairing rejected as requested")
-
-	// The code below will not be executed due to the early return above
-
 	// Expect a disconnect after this and don't dispatch the usual Disconnected event
 	cli.expectDisconnect()
 
@@ -265,9 +259,9 @@ func VerifyDeviceIdentityAccountSignature(deviceIdentity *waAdv.ADVSignedDeviceI
 
 func generateDeviceSignature(deviceIdentity *waAdv.ADVSignedDeviceIdentity, ikp *keys.KeyPair, isHostedAccount bool) *[64]byte {
 	prefix := AdvPrefixDeviceSignatureGenerate
-	if isHostedAccount {
-		prefix = AdvHostedPrefixDeviceIdentityDeviceSignatureVerification
-	}
+	//if isHostedAccount {
+	//	prefix = AdvHostedPrefixDeviceIdentityDeviceSignatureVerification
+	//}
 	message := concatBytes(prefix, deviceIdentity.Details, ikp.Pub[:], deviceIdentity.AccountSignatureKey)
 	sig := ecc.CalculateSignature(ecc.NewDjbECPrivateKey(*ikp.Priv), message)
 	return &sig
