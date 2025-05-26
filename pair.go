@@ -256,9 +256,9 @@ func VerifyDeviceIdentityAccountSignature(deviceIdentity *waAdv.ADVSignedDeviceI
 	signature := *(*[64]byte)(deviceIdentity.AccountSignature)
 
 	prefix := AdvPrefixAccountSignature
-	if isHostedAccount {
-		prefix = AdvHostedPrefixDeviceIdentityAccountSignature
-	}
+	//if isHostedAccount {
+	//	prefix = AdvHostedPrefixDeviceIdentityAccountSignature
+	//}
 	message := concatBytes(prefix, deviceIdentity.Details, ikp.Pub[:])
 	return ecc.VerifySignature(signatureKey, message, signature)
 }
