@@ -233,9 +233,11 @@ func verifyDeviceIdentityAccountSignature(deviceIdentity *waAdv.ADVSignedDeviceI
 	signature := *(*[64]byte)(deviceIdentity.AccountSignature)
 
 	prefix := AdvPrefixAccountSignature
-	if isHostedAccount {
-		prefix = AdvHostedPrefixDeviceIdentityAccountSignature
-	}
+	// Even tho webjs has a different prefix for hosted accounts in the code,
+	// it looks like it doesn't use it
+	//if isHostedAccount {
+	//	prefix = AdvHostedPrefixDeviceIdentityAccountSignature
+	//}
 	message := concatBytes(prefix, deviceIdentity.Details, ikp.Pub[:])
 	return ecc.VerifySignature(signatureKey, message, signature)
 }
