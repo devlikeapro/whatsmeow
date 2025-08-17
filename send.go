@@ -1117,15 +1117,15 @@ func (cli *Client) getMessageContent(
 		content = append(content, *extraParams.additionalNodes...)
 	}
 
-	if buttonType := getButtonTypeFromMessage(message); buttonType != "" {
-		content = append(content, waBinary.Node{
-			Tag: "biz",
-			Content: []waBinary.Node{{
-				Tag:   buttonType,
-				Attrs: getButtonAttributes(message),
-			}},
-		})
-	}
+	//if buttonType := getButtonTypeFromMessage(message); buttonType != "" {
+	//	content = append(content, waBinary.Node{
+	//		Tag: "biz",
+	//		Content: []waBinary.Node{{
+	//			Tag:   buttonType,
+	//			Attrs: getButtonAttributes(message),
+	//		}},
+	//	})
+	//}
 	return content
 }
 
