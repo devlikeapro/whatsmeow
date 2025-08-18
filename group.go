@@ -8,8 +8,10 @@ package whatsmeow
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
@@ -1036,9 +1038,13 @@ func (cli *Client) SetGroupMemberAddMode(ctx context.Context, jid types.JID, mod
 }
 
 // SetGroupDescription updates the group description.
-func (cli *Client) SetGroupDescription(ctx context.Context, jid types.JID, description string) error {
+func (cli *Client) SetGroupDescription(ctx context.Context, jid types.JID, description string, prevTopicId string) error {
 	content := waBinary.Node{
 		Tag: "description",
+		Attrs: waBinary.Attrs{
+			"id":   generateId(),
+			"prev": prevTopicId,
+		},
 		Content: []waBinary.Node{
 			{
 				Tag:     "body",
@@ -1049,4 +1055,16 @@ func (cli *Client) SetGroupDescription(ctx context.Context, jid types.JID, descr
 
 	_, err := cli.sendGroupIQ(ctx, iqSet, jid, content)
 	return err
+}
+
+func randomHex(n int) string {
+	bytes := make([]byte, n)
+	for i := range bytes {
+		bytes[i] = byte(rand.Intn(256))
+	}
+	return hex.EncodeToString(bytes)
+}
+
+func generateId() string {
+	return strings.ToUpper(randomHex(8))
 }
