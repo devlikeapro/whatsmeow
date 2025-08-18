@@ -1085,7 +1085,10 @@ func (cli *Client) SetGroupMemberAddMode(ctx context.Context, jid types.JID, mod
 	return err
 }
 
-// Deprecated: duplicate of SetGroupTopic
-func (cli *Client) SetGroupDescription(ctx context.Context, jid types.JID, description string) error {
-	return cli.SetGroupTopic(ctx, jid, "", "", description)
+// SetGroupDescription updates the group description.
+//
+// prevTopicId is the ID of the current topic; if empty, the current group info is fetched to find it.
+// Kept for compatibility with GOWS, delegates to SetGroupTopic which sends the id/prev attributes.
+func (cli *Client) SetGroupDescription(ctx context.Context, jid types.JID, description string, prevTopicId string) error {
+	return cli.SetGroupTopic(ctx, jid, prevTopicId, "", description)
 }
