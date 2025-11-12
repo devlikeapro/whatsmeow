@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"go.mau.fi/libsignal/ecc"
@@ -113,6 +114,12 @@ type incomingRetryKey struct {
 
 // handleRetryReceipt handles an incoming retry receipt for an outgoing message.
 func (cli *Client) handleRetryReceipt(ctx context.Context, receipt *events.Receipt, node *waBinary.Node) error {
+	defer func() {
+		if r := recover(); r != nil {
+			buf := debug.Stack()
+			cli.Log.Errorf("panic in handleRetryReceipt: %v\n%s", r, buf)
+		}
+	}()
 	retryChild, ok := node.GetOptionalChildByTag("retry")
 	if !ok {
 		return &ElementMissingError{Tag: "retry", In: "retry receipt"}
