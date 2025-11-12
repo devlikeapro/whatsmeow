@@ -15,6 +15,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"go.mau.fi/libsignal/state/record"
+
 	"go.mau.fi/libsignal/ecc"
 	"go.mau.fi/libsignal/groups"
 	"go.mau.fi/libsignal/keys/prekey"
@@ -92,6 +94,15 @@ func (cli *Client) shouldRecreateSession(ctx context.Context, retryCount int, ji
 	cli.sessionRecreateHistoryLock.Lock()
 	defer cli.sessionRecreateHistoryLock.Unlock()
 	if contains, err := cli.Store.ContainsSession(ctx, jid.SignalAddress()); err != nil {
+		session, err := cli.Store.LoadSession(ctx, jid.SignalAddress())
+		if err != nil {
+			cli.sessionRecreateHistory[jid] = time.Now()
+			return fmt.Sprintf("error loading session: %v", err), true
+		}
+		if reason, valid := cli.validSession(session); !valid {
+			cli.sessionRecreateHistory[jid] = time.Now()
+			return reason, true
+		}
 		return "", false
 	} else if !contains {
 		cli.sessionRecreateHistory[jid] = time.Now()
@@ -455,4 +466,29 @@ func (cli *Client) sendRetryReceipt(ctx context.Context, node *waBinary.Node, in
 	if err != nil {
 		cli.Log.Errorf("Failed to send retry receipt for %s: %v", id, err)
 	}
+}
+
+func (cli *Client) validSession(session *record.Session) (reason string, valid bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			buf := debug.Stack()
+			cli.Log.Errorf("panic in validSession: %v\n%s", r, buf)
+			reason = "panic occurred while checking session validity"
+			valid = false
+			return
+		}
+	}()
+	if session == nil {
+		return "session is nil", false
+	}
+	if session.SessionState() == nil {
+		return "session state is nil", false
+	}
+	state := session.SessionState()
+	if !state.HasSenderChain() {
+		return "session has no sender chain", false
+	}
+	// touch the sender chain key to see if it panics
+	state.SenderChainKey()
+	return "", true
 }
