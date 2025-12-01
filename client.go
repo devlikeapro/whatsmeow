@@ -221,10 +221,8 @@ func NewClient(deviceStore *store.Device, log waLog.Logger) *Client {
 		log = waLog.Noop
 	}
 	uniqueIDPrefix := random.Bytes(2)
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = DialContextIPv4
 	baseHTTPClient := &http.Client{
-		Transport: transport,
+		Transport: (http.DefaultTransport.(*http.Transport)).Clone(),
 	}
 	cli := &Client{
 		mediaHTTP:          ptr.Clone(baseHTTPClient),
@@ -338,7 +336,6 @@ func (cli *Client) SetProxy(proxy Proxy, opts ...SetProxyOptions) {
 	}
 	transport := (http.DefaultTransport.(*http.Transport)).Clone()
 	transport.Proxy = proxy
-	transport.DialContext = DialContextIPv4
 	cli.setTransport(transport, opt)
 }
 
