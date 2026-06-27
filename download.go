@@ -249,6 +249,71 @@ func (cli *Client) DownloadMediaWithOnlyPath(ctx context.Context, directPath str
 	return cli.DownloadMediaWithPath(ctx, directPath, nil, nil, nil, "", "", true)
 }
 
+// DownloadAnonymous downloads the attachment using only the signed directPath
+// (the oh/oe query parameters embedded in it), without the authenticated MMS
+// query parameters (hash/mms-type/__wa-mms) that Download attaches.
+//
+// This is intended as a fallback when Download returns ErrMediaDownloadFailedWith403:
+// the signed directPath frequently stays anonymously downloadable from the CDN until
+// its oe expiry, even when the authenticated MMS endpoint rejects the request. This
+// is commonly observed for lazily-fetched documents, whose MMS access expires sooner
+// than the signed-URL TTL while images/videos (downloaded eagerly) are unaffected.
+func (cli *Client) DownloadAnonymous(ctx context.Context, msg DownloadableMessage) ([]byte, error) {
+	if cli == nil {
+		return nil, ErrClientIsNil
+	}
+	mediaType := GetMediaType(msg)
+	if mediaType == "" {
+		return nil, fmt.Errorf("%w %T", ErrUnknownMediaType, msg)
+	}
+	if len(msg.GetDirectPath()) == 0 {
+		return nil, ErrNoURLPresent
+	}
+	return cli.DownloadMediaWithPathAnonymous(
+		ctx, msg.GetDirectPath(), msg.GetFileEncSHA256(), msg.GetFileSHA256(), msg.GetMediaKey(), mediaType,
+	)
+}
+
+// DownloadMediaWithPathAnonymous downloads an attachment using only the signed
+// directPath, without the authenticated MMS query parameters. See DownloadAnonymous
+// for when to use this.
+func (cli *Client) DownloadMediaWithPathAnonymous(
+	ctx context.Context,
+	directPath string,
+	encFileHash, fileHash, mediaKey []byte,
+	mediaType MediaType,
+) (data []byte, err error) {
+	if fileHash == nil {
+		fileHash = make([]byte, 32)
+	}
+	if !strings.HasPrefix(directPath, "/") {
+		return nil, fmt.Errorf("media download path does not start with slash: %s", directPath)
+	}
+	var mediaConn *MediaConn
+	mediaConn, err = cli.refreshMediaConn(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh media connections: %w", err)
+	}
+	for i, host := range mediaConn.Hosts {
+		// Plain signed-path URL: only the oh/oe params already embedded in directPath,
+		// none of the authenticated &hash=/&mms-type=/&__wa-mms= parameters.
+		mediaURL := fmt.Sprintf("https://%s%s", host.Hostname, directPath)
+		data, err = cli.downloadAndDecrypt(ctx, mediaURL, mediaKey, mediaType, encFileHash, fileHash)
+		if err == nil ||
+			errors.Is(err, ErrInvalidMediaSHA256) ||
+			errors.Is(err, ErrMediaDownloadFailedWith403) ||
+			errors.Is(err, ErrMediaDownloadFailedWith404) ||
+			errors.Is(err, ErrMediaDownloadFailedWith410) ||
+			errors.Is(err, context.Canceled) {
+			return
+		} else if i >= len(mediaConn.Hosts)-1 {
+			return nil, fmt.Errorf("failed to download media from last host: %w", err)
+		}
+		cli.Log.Warnf("Failed to download media anonymously: %s, trying with next host...", err)
+	}
+	return
+}
+
 // DownloadMediaWithPath downloads an attachment by manually specifying the path and encryption details.
 func (cli *Client) DownloadMediaWithPath(
 	ctx context.Context,
