@@ -64,6 +64,12 @@ func (cli *Client) handleStreamError(ctx context.Context, node *waBinary.Node) {
 			go cli.dispatchEvent(&events.CATRefreshError{Error: err})
 		}
 	default:
+		if ack, ok := node.GetOptionalChildByTag("ack"); ok {
+			ackAg := ack.AttrGetter()
+			if ackAg.OptionalString("type") == "media" {
+				cli.Log.Warnf("Stream error carries a media ack (id=%q) — this is the offline-queue poison signature (WAHA #2151)", ackAg.OptionalString("id"))
+			}
+		}
 		cli.Log.Errorf("Unknown stream error: %s", node)
 		go cli.dispatchEvent(&events.StreamError{Code: code, Raw: node})
 	}

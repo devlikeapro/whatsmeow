@@ -350,7 +350,7 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 			cli.Log.Warnf("No LID found for %s", info.Sender)
 		}
 	}
-	var recognizedStanza, protobufFailed bool
+	var recognizedStanza, protobufFailed, dispatchedNew bool
 	for _, child := range children {
 		if child.Tag != "enc" {
 			continue
@@ -431,6 +431,10 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 			})
 			return
 		}
+		// A child decrypted cleanly: this delivery carries at least one genuinely
+		// new message (or one whose handler will run). Reaching here means the
+		// EventAlreadyProcessed / ErrOldCounter continues above did not apply.
+		dispatchedNew = true
 		retryCount := ag.OptionalInt("count")
 		cli.cancelDelayedRequestFromPhone(info.ID)
 
@@ -482,14 +486,50 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 		}
 	}
 	cli.backgroundIfAsyncAck(func() {
-		if !recognizedStanza {
+		switch decideAck(recognizedStanza, protobufFailed, dispatchedNew) {
+		case ackUnrecognized:
 			cli.sendAck(ctx, node, NackUnrecognizedStanza)
-		} else if protobufFailed {
+		case ackInvalidProto:
 			cli.sendAck(ctx, node, NackInvalidProtobuf)
-		} else {
+		case ackPlain:
+			// Every enc child was already processed (a redelivered offline
+			// stanza). Sending a media receipt here is what the server rejects
+			// with <stream:error><ack type="media"/>, poisoning the offline
+			// queue (WAHA issue #2151). A plain ack acknowledges the stanza so
+			// the server advances its cursor without re-dispatching anything.
+			cli.sendAck(ctx, node, 0)
+		default:
 			cli.sendMessageReceipt(ctx, info, node)
 		}
 	})
+}
+
+// ackKind selects how decryptMessages acknowledges a recognized message node.
+type ackKind int
+
+const (
+	ackReceipt ackKind = iota
+	ackPlain
+	ackUnrecognized
+	ackInvalidProto
+)
+
+// decideAck picks the acknowledgement for a message stanza after its enc
+// children have been processed. When the stanza is recognized and decodable but
+// nothing new was dispatched (every child was already processed / an old-counter
+// replay), it returns ackPlain so we send a benign ack instead of a media
+// receipt the server would reject — breaking the offline-queue poison loop.
+func decideAck(recognizedStanza, protobufFailed, dispatchedNew bool) ackKind {
+	switch {
+	case !recognizedStanza:
+		return ackUnrecognized
+	case protobufFailed:
+		return ackInvalidProto
+	case !dispatchedNew:
+		return ackPlain
+	default:
+		return ackReceipt
+	}
 }
 
 func (cli *Client) clearUntrustedIdentity(ctx context.Context, target types.JID) error {
