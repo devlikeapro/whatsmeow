@@ -709,10 +709,17 @@ func (cli *Client) sendNewsletter(
 	mediaID string,
 	timings *MessageDebugTimings,
 ) ([]byte, error) {
+	msgType := getTypeFromMessage(message)
+	// Extended text with a link preview must be published as plain text, the way
+	// WhatsApp Web does (newsletterText) - the "media"/"url" publish requires a
+	// media_id and the server drops the preview without one
+	if msgType == "media" && message.GetExtendedTextMessage() != nil {
+		msgType = "text"
+	}
 	attrs := waBinary.Attrs{
 		"to":   to,
 		"id":   id,
-		"type": getTypeFromMessage(message),
+		"type": msgType,
 	}
 	if mediaID != "" {
 		attrs["media_id"] = mediaID
@@ -736,7 +743,8 @@ func (cli *Client) sendNewsletter(
 		Attrs:   waBinary.Attrs{},
 	}
 	if message != nil {
-		if mediaType := getMediaTypeFromMessage(message); mediaType != "" {
+		// "url" is skipped for the same reason as above - link previews go as text
+		if mediaType := getMediaTypeFromMessage(message); mediaType != "" && mediaType != "url" {
 			plaintextNode.Attrs["mediatype"] = mediaType
 		}
 	}
