@@ -987,8 +987,13 @@ func (cli *Client) parseGroupChange(node *waBinary.Node) (*events.GroupInfo, []s
 				return nil, nil, fmt.Errorf("failed to parse group unlink node in group change: %w", err)
 			}
 		case "membership_approval_mode":
+			// The change carries <group_join state="on|off"/> - the mode may be turned off too
+			state := true
+			if groupJoin, ok := child.GetOptionalChildByTag("group_join"); ok {
+				state = groupJoin.AttrGetter().OptionalString("state") != "off"
+			}
 			evt.MembershipApprovalMode = &types.GroupMembershipApprovalMode{
-				IsJoinApprovalRequired: true,
+				IsJoinApprovalRequired: state,
 			}
 		case "suspended":
 			evt.Suspended = true
