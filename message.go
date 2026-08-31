@@ -340,8 +340,13 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 		} else {
 			cli.Log.Warnf("No LID found for %s", info.Sender)
 		}
+	} else if info.Sender.Server == types.HiddenUserServer && !info.Sender.IsBot() &&
+		info.SenderAlt.Server == types.DefaultUserServer {
+		// lid-addressed group: participant_pn carries the phone number. Migrate any pre-cutover
+		// PN-keyed sessions/sender keys so they aren't orphaned under the PN signal address.
+		cli.migrateSessionStore(ctx, info.SenderAlt, info.Sender)
 	}
-	var recognizedStanza, protobufFailed, dispatchedNew bool
+	var recognizedStanza, protobufFailed, dispatchedNew, freshDirectDecrypt, retryRequested bool
 	for _, child := range children {
 		if child.Tag != "enc" {
 			continue
@@ -399,6 +404,32 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 			cli.Log.Debugf("Ignoring message %s from %s: %v", info.ID, info.SourceString(), err)
 			continue
 		} else if errors.Is(err, signalerror.ErrOldCounter) {
+			if encType == "skmsg" && freshDirectDecrypt && !retryRequested {
+				// The direct sibling in this stanza just installed a fresh SKDM that seeded the sender-key
+				// chain past this skmsg's iteration. The content key below the seed is underivable, so this
+				// is not a re-delivery dedup: ask the sender to re-encrypt via a retry receipt.
+				cli.Log.Warnf("Old counter for group message %s from %s right after fresh sender key, requesting retry: %v", info.ID, info.SourceString(), err)
+				decryptFail := ag.OptionalString("decrypt-fail")
+				if decryptFail == "" {
+					metaNode := node.GetChildByTag("meta")
+					decryptFail = metaNode.AttrGetter().OptionalString("decrypt-fail")
+				}
+				handlerFailed := cli.dispatchEvent(&events.UndecryptableMessage{
+					Info:            *info,
+					DecryptFailMode: events.DecryptFailMode(decryptFail),
+				})
+				if handlerFailed {
+					cli.Log.Warnf("Handler for undecryptable message %s failed", info.ID)
+					return
+				}
+				retryRequested = true
+				if cli.SynchronousAck {
+					cli.sendRetryReceipt(ctx, node, info, false)
+				} else {
+					go cli.sendRetryReceipt(context.WithoutCancel(ctx), node, info, false)
+				}
+				continue
+			}
 			cli.Log.Warnf("Ignoring message %s from %s: %v", info.ID, info.SourceString(), err)
 			continue
 		} else if err != nil {
@@ -407,6 +438,10 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 				return
 			}
 			isUnavailable := encType == "skmsg" && !containsDirectMsg && errors.Is(err, signalerror.ErrNoSenderKeyForUser)
+			if retryRequested {
+				// One retry receipt and one event per stanza
+				continue
+			}
 			decryptFail := ag.OptionalString("decrypt-fail")
 			if decryptFail == "" {
 				metaNode := node.GetChildByTag("meta")
@@ -426,20 +461,25 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 				cli.backgroundIfAsyncAck(func() {
 					cli.sendAck(ctx, node, NackMissingMessageSecret)
 				})
-			} else if cli.SynchronousAck {
+				return
+			}
+			// Keep going so a pkmsg after a failed skmsg still installs its SKDM; the plain ack for the
+			// stanza is emitted by the decideAck block below (retryRequested -> ackPlain).
+			retryRequested = true
+			if cli.SynchronousAck {
 				cli.sendRetryReceipt(ctx, node, info, isUnavailable)
-				// TODO this probably isn't supposed to ack
-				cli.sendAck(ctx, node, 0)
 			} else {
 				go cli.sendRetryReceipt(context.WithoutCancel(ctx), node, info, isUnavailable)
-				go cli.sendAck(ctx, node, 0)
 			}
-			return
+			continue
 		}
 		// A child decrypted cleanly: this delivery carries at least one genuinely
 		// new message (or one whose handler will run). Reaching here means the
 		// EventAlreadyProcessed / ErrOldCounter continues above did not apply.
 		dispatchedNew = true
+		if encType == "pkmsg" || encType == "msg" {
+			freshDirectDecrypt = true
+		}
 		retryCount := ag.OptionalInt("count")
 		cli.cancelDelayedRequestFromPhone(info.ID)
 
@@ -491,7 +531,7 @@ func (cli *Client) decryptMessages(ctx context.Context, info *types.MessageInfo,
 		}
 	}
 	cli.backgroundIfAsyncAck(func() {
-		switch decideAck(recognizedStanza, protobufFailed, dispatchedNew) {
+		switch decideAck(recognizedStanza, protobufFailed, dispatchedNew, retryRequested) {
 		case ackUnrecognized:
 			cli.sendAck(ctx, node, NackUnrecognizedStanza)
 		case ackInvalidProto:
@@ -524,12 +564,17 @@ const (
 // nothing new was dispatched (every child was already processed / an old-counter
 // replay), it returns ackPlain so we send a benign ack instead of a media
 // receipt the server would reject — breaking the offline-queue poison loop.
-func decideAck(recognizedStanza, protobufFailed, dispatchedNew bool) ackKind {
+// When a retry receipt already asked the sender to re-encrypt a failed child,
+// claiming delivery would be a lie, but the stanza must still be acked so the
+// server advances its cursor — also ackPlain.
+func decideAck(recognizedStanza, protobufFailed, dispatchedNew, retryRequested bool) ackKind {
 	switch {
 	case !recognizedStanza:
 		return ackUnrecognized
 	case protobufFailed:
 		return ackInvalidProto
+	case retryRequested:
+		return ackPlain
 	case !dispatchedNew:
 		return ackPlain
 	default:

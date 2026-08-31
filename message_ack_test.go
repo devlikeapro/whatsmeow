@@ -14,6 +14,7 @@ func TestDecideAck(t *testing.T) {
 		recognizedStanza bool
 		protobufFailed   bool
 		dispatchedNew    bool
+		retryRequested   bool
 		want             ackKind
 	}{
 		{
@@ -58,13 +59,28 @@ func TestDecideAck(t *testing.T) {
 			dispatchedNew:    true,
 			want:             ackReceipt,
 		},
+		{
+			// A retry receipt was sent for a failed child: no delivered receipt even if a sibling dispatched.
+			name:             "retry requested -> plain ack",
+			recognizedStanza: true,
+			dispatchedNew:    true,
+			retryRequested:   true,
+			want:             ackPlain,
+		},
+		{
+			name:             "protobuf failure wins over retry requested",
+			recognizedStanza: true,
+			protobufFailed:   true,
+			retryRequested:   true,
+			want:             ackInvalidProto,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := decideAck(tc.recognizedStanza, tc.protobufFailed, tc.dispatchedNew)
+			got := decideAck(tc.recognizedStanza, tc.protobufFailed, tc.dispatchedNew, tc.retryRequested)
 			if got != tc.want {
-				t.Fatalf("decideAck(recognized=%v, protobufFailed=%v, dispatchedNew=%v) = %d, want %d",
-					tc.recognizedStanza, tc.protobufFailed, tc.dispatchedNew, got, tc.want)
+				t.Fatalf("decideAck(recognized=%v, protobufFailed=%v, dispatchedNew=%v, retryRequested=%v) = %d, want %d",
+					tc.recognizedStanza, tc.protobufFailed, tc.dispatchedNew, tc.retryRequested, got, tc.want)
 			}
 		})
 	}
