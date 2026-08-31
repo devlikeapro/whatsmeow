@@ -552,8 +552,15 @@ func (cli *Client) GetJoinedGroups(ctx context.Context) ([]*types.GroupInfo, err
 	}
 	children := groups.GetChildren()
 	infos := make([]*types.GroupInfo, 0, len(children))
+	var truncated []*types.GroupInfo
 	var allLIDPairs []store.LIDMapping
 	var allRedactedPhones []store.RedactedPhoneEntry
+	collect := func(parsed *types.GroupInfo) {
+		lidPairs, redactedPhones := cli.cacheGroupInfo(parsed, true)
+		allLIDPairs = append(allLIDPairs, lidPairs...)
+		allRedactedPhones = append(allRedactedPhones, redactedPhones...)
+		infos = append(infos, parsed)
+	}
 	for _, child := range children {
 		if child.Tag != "group" {
 			cli.Log.Debugf("Unexpected child in group list response: %s", &child)
@@ -563,10 +570,26 @@ func (cli *Client) GetJoinedGroups(ctx context.Context) ([]*types.GroupInfo, err
 		if parseErr != nil {
 			cli.Log.Warnf("Error parsing group %s: %v", parsed.JID, parseErr)
 		}
-		lidPairs, redactedPhones := cli.cacheGroupInfo(parsed, true)
-		allLIDPairs = append(allLIDPairs, lidPairs...)
-		allRedactedPhones = append(allRedactedPhones, redactedPhones...)
-		infos = append(infos, parsed)
+		if child.AttrGetter().OptionalString("truncated") == "true" {
+			// Stub with only id and size, the full info is fetched below with a batched query
+			truncated = append(truncated, parsed)
+			continue
+		}
+		collect(parsed)
+	}
+	for _, batch := range chunkGroupsBySize(truncated) {
+		full, batchErr := cli.getGroupInfoBatch(ctx, batch)
+		if batchErr != nil {
+			cli.Log.Warnf("Failed to get full info for %d truncated groups: %v", len(batch), batchErr)
+			// Keep the stubs so the group list stays complete
+			for _, parsed := range batch {
+				collect(parsed)
+			}
+			continue
+		}
+		for _, parsed := range full {
+			collect(parsed)
+		}
 	}
 	err = cli.Store.LIDs.PutManyLIDMappings(ctx, allLIDPairs)
 	if err != nil {
@@ -575,6 +598,64 @@ func (cli *Client) GetJoinedGroups(ctx context.Context) ([]*types.GroupInfo, err
 	err = cli.Store.Contacts.PutManyRedactedPhones(ctx, allRedactedPhones)
 	if err != nil {
 		cli.Log.Warnf("Failed to store redacted phones from joined groups: %v", err)
+	}
+	return infos, nil
+}
+
+// WhatsApp Web chunks batched group info queries by cumulative group size with this limit.
+const groupInfoBatchMaxSize = 50_000
+
+func chunkGroupsBySize(groups []*types.GroupInfo) [][]*types.GroupInfo {
+	var batches [][]*types.GroupInfo
+	var batch []*types.GroupInfo
+	size := 0
+	for _, group := range groups {
+		if len(batch) > 0 && size+group.ParticipantCount > groupInfoBatchMaxSize {
+			batches = append(batches, batch)
+			batch = nil
+			size = 0
+		}
+		batch = append(batch, group)
+		size += group.ParticipantCount
+	}
+	if len(batch) > 0 {
+		batches = append(batches, batch)
+	}
+	return batches
+}
+
+// getGroupInfoBatch requests full info for multiple groups at once, like WhatsApp Web does for
+// truncated entries in the participating groups response.
+func (cli *Client) getGroupInfoBatch(ctx context.Context, groups []*types.GroupInfo) ([]*types.GroupInfo, error) {
+	content := make([]waBinary.Node, len(groups))
+	for i, group := range groups {
+		content[i] = waBinary.Node{Tag: "group", Attrs: waBinary.Attrs{"jid": group.JID}}
+	}
+	resp, err := cli.sendGroupIQ(ctx, iqGet, types.GroupServerJID, waBinary.Node{
+		Tag:     "query",
+		Attrs:   waBinary.Attrs{"context": "get_participating_groups_paginated"},
+		Content: content,
+	})
+	if err != nil {
+		return nil, err
+	}
+	groupsNode, ok := resp.GetOptionalChildByTag("groups")
+	if !ok {
+		return nil, &ElementMissingError{Tag: "groups", In: "response to batch group info query"}
+	}
+	infos := make([]*types.GroupInfo, 0, len(groups))
+	for _, child := range groupsNode.GetChildren() {
+		if child.Tag != "group" {
+			cli.Log.Debugf("Unexpected child in batch group info response: %s", &child)
+			continue
+		}
+		parsed, parseErr := cli.parseGroupNode(&child)
+		if parseErr != nil {
+			// Forbidden / not-exist entries don't have full group info
+			cli.Log.Debugf("Skipping group in batch group info response: %v", parseErr)
+			continue
+		}
+		infos = append(infos, parsed)
 	}
 	return infos, nil
 }
