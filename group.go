@@ -381,13 +381,15 @@ func (cli *Client) SetGroupTopic(ctx context.Context, jid types.JID, previousID,
 	if previousID != "" {
 		attrs["prev"] = previousID
 	}
-	content := []waBinary.Node{{
-		Tag:     "body",
-		Content: []byte(topic),
-	}}
+	// keep content an untyped nil on delete - a nil []Node is a non-nil interface and encodes as an empty list
+	var content any
 	if len(topic) == 0 {
 		attrs["delete"] = "true"
-		content = nil
+	} else {
+		content = []waBinary.Node{{
+			Tag:     "body",
+			Content: []byte(topic),
+		}}
 	}
 	_, err := cli.sendGroupIQ(ctx, iqSet, jid, waBinary.Node{
 		Tag:     "description",
