@@ -9,6 +9,7 @@ package whatsmeow
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -868,6 +869,9 @@ func (cli *Client) parseGroupNode(groupNode *waBinary.Node) (*types.GroupInfo, e
 		case "member_add_mode":
 			modeBytes, _ := child.Content.([]byte)
 			group.MemberAddMode = types.GroupMemberAddMode(modeBytes)
+		case "member_share_group_history_mode":
+			modeBytes, _ := child.Content.([]byte)
+			group.MemberShareHistoryMode = types.GroupMemberShareHistoryMode(modeBytes)
 		case "linked_parent":
 			group.LinkedParentJID = childAG.JID("jid")
 		case "default_sub_group":
@@ -1182,6 +1186,46 @@ func (cli *Client) SetGroupMemberAddMode(ctx context.Context, jid types.JID, mod
 
 	_, err := cli.sendGroupIQ(ctx, iqSet, jid, content)
 	return err
+}
+
+const mutationUpdateGroupProperty = "9418211574894172"
+
+type respUpdateGroupProperty struct {
+	Result *struct {
+		ID    string `json:"id"`
+		State string `json:"state"`
+	} `json:"xwa2_group_update_property"`
+}
+
+// SetGroupMemberShareHistoryMode sets who can share the group message history with new members
+func (cli *Client) SetGroupMemberShareHistoryMode(ctx context.Context, jid types.JID, mode types.GroupMemberShareHistoryMode) error {
+	var mexMode string
+	switch mode {
+	case types.GroupMemberShareHistoryModeAdmin:
+		mexMode = "ADMIN_SHARE"
+	case types.GroupMemberShareHistoryModeAllMember:
+		mexMode = "ALL_MEMBER_SHARE"
+	default:
+		return errors.New("invalid mode, must be 'admin_share' or 'all_member_share'")
+	}
+
+	data, err := cli.sendMexIQ(ctx, mutationUpdateGroupProperty, map[string]any{
+		"group_id": jid.String(),
+		"update":   map[string]any{"member_share_group_history_mode": mexMode},
+	})
+	if err != nil {
+		return err
+	}
+	var resp respUpdateGroupProperty
+	err = json.Unmarshal(data, &resp)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal group property update response: %w", err)
+	}
+	// WA Web fails only when a state is present and not ACTIVE
+	if resp.Result != nil && resp.Result.State != "" && resp.Result.State != "ACTIVE" {
+		return fmt.Errorf("unexpected group state %q after property update", resp.Result.State)
+	}
+	return nil
 }
 
 // SetGroupDescription updates the group description.
