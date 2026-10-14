@@ -22,6 +22,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/libsignal/groups"
+	groupRecord "go.mau.fi/libsignal/groups/state/record"
 	"go.mau.fi/libsignal/keys/prekey"
 	"go.mau.fi/libsignal/protocol"
 	"go.mau.fi/libsignal/session"
@@ -822,6 +823,16 @@ func (cli *Client) sendGroup(
 	start = time.Now()
 	builder := groups.NewGroupSessionBuilder(cli.Store, pbSerializer)
 	senderKeyName := protocol.NewSenderKeyName(to.String(), cli.getOwnLID().SignalAddress())
+	if to.Server == types.BroadcastServer && to != types.StatusBroadcastJID {
+		// The phone only records a message another device sent to one of its broadcast lists
+		// when it can't decrypt the fan-out copy and gets the message through a retry instead.
+		// Answering a retry also hands it the current sender key, so use a fresh one for every
+		// message. Recipients get the new key with each message anyway.
+		emptyKey := groupRecord.NewSenderKey(pbSerializer.SenderKeyRecord, pbSerializer.SenderKeyState)
+		if err = cli.Store.StoreSenderKey(ctx, senderKeyName, emptyKey); err != nil {
+			return "", nil, fmt.Errorf("failed to reset sender key to send %s to %s: %w", id, to, err)
+		}
+	}
 	signalSKDMessage, err := builder.Create(ctx, senderKeyName)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create sender key distribution message to send %s to %s: %w", id, to, err)
