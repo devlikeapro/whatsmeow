@@ -184,7 +184,13 @@ func BuildLabelMessage(target types.JID, labelID, messageID string, labeled bool
 	}
 }
 
-func newLabelEditMutation(labelID string, labelName string, labelColor int32, deleted bool) MutationInfo {
+func newLabelEditMutation(labelID string, labelName string, labelColor int32, deleted bool, labelType *waSyncAction.LabelEditAction_ListType, isActive *bool) MutationInfo {
+	if !deleted && labelType == nil {
+		labelType = waSyncAction.LabelEditAction_CUSTOM.Enum()
+	}
+	if !deleted && isActive == nil {
+		isActive = proto.Bool(true)
+	}
 	return MutationInfo{
 		Index:   []string{IndexLabelEdit, labelID},
 		Version: 3,
@@ -193,19 +199,20 @@ func newLabelEditMutation(labelID string, labelName string, labelColor int32, de
 				Name:     &labelName,
 				Color:    &labelColor,
 				Deleted:  &deleted,
-				Type:     If(deleted, nil, waSyncAction.LabelEditAction_CUSTOM.Enum()),
-				IsActive: If(deleted, nil, proto.Bool(true)),
+				Type:     If(deleted, nil, labelType),
+				IsActive: If(deleted, nil, isActive),
 			},
 		},
 	}
 }
 
 // BuildLabelEdit builds an app state patch for editing a label.
-func BuildLabelEdit(labelID string, labelName string, labelColor int32, deleted bool) PatchInfo {
+// labelType and isActive are kept as given (nil means CUSTOM and active for a non-deleted label).
+func BuildLabelEdit(labelID string, labelName string, labelColor int32, deleted bool, labelType *waSyncAction.LabelEditAction_ListType, isActive *bool) PatchInfo {
 	return PatchInfo{
 		Type: WAPatchRegular,
 		Mutations: []MutationInfo{
-			newLabelEditMutation(labelID, labelName, labelColor, deleted),
+			newLabelEditMutation(labelID, labelName, labelColor, deleted, labelType, isActive),
 		},
 	}
 }
