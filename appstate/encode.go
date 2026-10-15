@@ -190,9 +190,11 @@ func newLabelEditMutation(labelID string, labelName string, labelColor int32, de
 		Version: 3,
 		Value: &waSyncAction.SyncActionValue{
 			LabelEditAction: &waSyncAction.LabelEditAction{
-				Name:    &labelName,
-				Color:   &labelColor,
-				Deleted: &deleted,
+				Name:     &labelName,
+				Color:    &labelColor,
+				Deleted:  &deleted,
+				Type:     If(deleted, nil, waSyncAction.LabelEditAction_CUSTOM.Enum()),
+				IsActive: If(deleted, nil, proto.Bool(true)),
 			},
 		},
 	}
