@@ -13,11 +13,17 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
+
+// DialTimeout limits how long the websocket dial (including the HTTP upgrade) may take.
+// Without a limit, a proxy or server that accepts the connection but never answers
+// the upgrade request would block Connect forever. Set to zero to disable.
+var DialTimeout = 20 * time.Second
 
 type FrameSocket struct {
 	parentCtx context.Context
@@ -102,7 +108,14 @@ func (fs *FrameSocket) Connect(ctx context.Context) error {
 	fs.cancelCtx, fs.cancel = context.WithCancel(ctx)
 
 	fs.log.Debugf("Dialing %s", fs.URL)
-	conn, resp, err := websocket.Dial(ctx, fs.URL, fs.makeDialOptions())
+	// The timeout only applies to the dial, the connection itself lives on ctx.
+	dialCtx := ctx
+	if DialTimeout > 0 {
+		var cancelDial context.CancelFunc
+		dialCtx, cancelDial = context.WithTimeout(ctx, DialTimeout)
+		defer cancelDial()
+	}
+	conn, resp, err := websocket.Dial(dialCtx, fs.URL, fs.makeDialOptions())
 	if err != nil {
 		if resp != nil {
 			err = ErrWithStatusCode{err, resp.StatusCode}
