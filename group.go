@@ -797,10 +797,12 @@ func (cli *Client) getCachedGroupData(ctx context.Context, jid types.JID) (*grou
 func parseParticipant(childAG *waBinary.AttrUtility, child *waBinary.Node) types.GroupParticipant {
 	pcpType := childAG.OptionalString("type")
 	participant := types.GroupParticipant{
-		IsAdmin:      pcpType == "admin" || pcpType == "superadmin",
-		IsSuperAdmin: pcpType == "superadmin",
-		JID:          childAG.JID("jid"),
-		DisplayName:  childAG.OptionalString("display_name"),
+		IsAdmin:        pcpType == "admin" || pcpType == "superadmin",
+		IsSuperAdmin:   pcpType == "superadmin",
+		JID:            childAG.JID("jid"),
+		DisplayName:    childAG.OptionalString("display_name"),
+		Label:          childAG.OptionalString("participant_label"),
+		LabelTimestamp: childAG.OptionalUnixTime("participant_label_mtime"),
 	}
 	if participant.JID.Server == types.HiddenUserServer {
 		participant.LID = participant.JID

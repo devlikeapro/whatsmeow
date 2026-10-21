@@ -121,6 +121,10 @@ type GroupParticipant struct {
 	// This is only present for anonymous users in announcement groups, it's an obfuscated phone number
 	DisplayName string
 
+	// Member tag the participant set for themselves in the group, empty when none.
+	Label          string
+	LabelTimestamp time.Time
+
 	// When creating groups, adding some participants may fail.
 	// In such cases, the error code will be here.
 	Error      int
