@@ -16,59 +16,45 @@ import (
 func TestGroupedReceiptMessageID(t *testing.T) {
 	participants := func(attrs waBinary.Attrs) *waBinary.Node {
 		return &waBinary.Node{
-			Tag:     "participants",
-			Attrs:   attrs,
-			Content: []waBinary.Node{{Tag: "user", Attrs: waBinary.Attrs{"jid": "123@lid", "t": "1793340000"}}},
+			Tag:   "participants",
+			Attrs: attrs,
+			Content: []waBinary.Node{
+				{Tag: "user", Attrs: waBinary.Attrs{"jid": "100000000000001@lid", "t": "1793344591", "type": "delivery"}},
+				{Tag: "user", Attrs: waBinary.Attrs{"jid": "100000000000002@lid", "t": "1793344591", "type": "delivery"}},
+			},
 		}
 	}
 	tests := []struct {
-		name             string
-		receiptID        string
-		participants     *waBinary.Node
-		participantNodes int
-		want             types.MessageID
+		name         string
+		participants *waBinary.Node
+		want         types.MessageID
 	}{
 		{
-			name:             "key present: the key is the message ID",
-			receiptID:        "OUTER",
-			participants:     participants(waBinary.Attrs{"key": "3EB0KEY"}),
-			participantNodes: 1,
-			want:             "3EB0KEY",
+			name:         "key",
+			participants: participants(waBinary.Attrs{"key": "3EB0KEY"}),
+			want:         "3EB0KEY",
 		},
 		{
-			name:             "key present with several participants nodes: still the key",
-			receiptID:        "OUTER",
-			participants:     participants(waBinary.Attrs{"key": "3EB0KEY"}),
-			participantNodes: 3,
-			want:             "3EB0KEY",
+			// Shape received from WhatsApp on 2026-10-30:
+			// <receipt from="…@g.us" id="SAGR4A9340B142EA5B5F8A" t="…"><participants message_id="ACAC70EC…">
+			name:         "message_id",
+			participants: participants(waBinary.Attrs{"message_id": "ACAC70EC03AA0DE9A3CC792A81A85708"}),
+			want:         "ACAC70EC03AA0DE9A3CC792A81A85708",
 		},
 		{
-			// The case seen in production: group delivery receipts dispatched with MessageIDs [""].
-			name:             "no key, single participants node: the receipt's own id",
-			receiptID:        "AC6B64E0B9C128D6E047E50FA2F26577",
-			participants:     participants(waBinary.Attrs{}),
-			participantNodes: 1,
-			want:             "AC6B64E0B9C128D6E047E50FA2F26577",
+			name:         "key wins over message_id",
+			participants: participants(waBinary.Attrs{"key": "3EB0KEY", "message_id": "OTHER"}),
+			want:         "3EB0KEY",
 		},
 		{
-			name:             "no key, several participants nodes: ambiguous, no ID",
-			receiptID:        "OUTER",
-			participants:     participants(waBinary.Attrs{}),
-			participantNodes: 2,
-			want:             "",
-		},
-		{
-			name:             "no key and no receipt id: no ID",
-			receiptID:        "",
-			participants:     participants(waBinary.Attrs{}),
-			participantNodes: 1,
-			want:             "",
+			name:         "neither",
+			participants: participants(waBinary.Attrs{}),
+			want:         "",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := groupedReceiptMessageID(tc.receiptID, tc.participants, tc.participantNodes)
-			if got != tc.want {
+			if got := groupedReceiptMessageID(tc.participants); got != tc.want {
 				t.Fatalf("groupedReceiptMessageID() = %q, want %q", got, tc.want)
 			}
 		})
