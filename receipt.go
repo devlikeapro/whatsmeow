@@ -44,8 +44,12 @@ func (cli *Client) handleReceipt(ctx context.Context, node *waBinary.Node) {
 }
 
 func (cli *Client) handleGroupedReceipt(partialReceipt events.Receipt, participants *waBinary.Node) (cancelled bool) {
-	pag := participants.AttrGetter()
-	partialReceipt.MessageIDs = []types.MessageID{pag.String("key")}
+	messageID := groupedReceiptMessageID(participants)
+	if messageID == "" {
+		cli.Log.Warnf("Grouped receipt participants node has no message ID: %s", participants)
+		return
+	}
+	partialReceipt.MessageIDs = []types.MessageID{messageID}
 	for _, child := range participants.GetChildren() {
 		if child.Tag != "user" {
 			cli.Log.Warnf("Unexpected node in grouped receipt participants: %s", &child)
@@ -62,6 +66,16 @@ func (cli *Client) handleGroupedReceipt(partialReceipt events.Receipt, participa
 		cancelled = cli.dispatchEvent(&receipt) || cancelled
 	}
 	return
+}
+
+// groupedReceiptMessageID returns the ID of the message a <participants> node is about.
+// WhatsApp sends it either as key or as message_id; the <receipt> id is not a message ID there.
+func groupedReceiptMessageID(participants *waBinary.Node) types.MessageID {
+	ag := participants.AttrGetter()
+	if key := ag.OptionalString("key"); key != "" {
+		return key
+	}
+	return ag.OptionalString("message_id")
 }
 
 func (cli *Client) parseReceipt(node *waBinary.Node) (*events.Receipt, []waBinary.Node, error) {
