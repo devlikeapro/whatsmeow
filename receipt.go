@@ -27,8 +27,11 @@ func (cli *Client) handleReceipt(ctx context.Context, node *waBinary.Node) {
 		go cli.sendAck(ctx, node, NackParsingError)
 	} else if participants != nil {
 		defer cli.maybeDeferredAck(ctx, node)(&cancelled)
+		receiptID := node.AttrGetter().OptionalString("id")
 		for _, pcp := range participants {
-			cancelled = cli.handleGroupedReceipt(*receipt, &pcp)
+			partial := *receipt
+			partial.MessageIDs = []types.MessageID{groupedReceiptMessageID(receiptID, &pcp, len(participants))}
+			cancelled = cli.handleGroupedReceipt(partial, &pcp)
 		}
 	} else {
 		if receipt.Type == types.ReceiptTypeRetry {
@@ -43,9 +46,36 @@ func (cli *Client) handleReceipt(ctx context.Context, node *waBinary.Node) {
 	}
 }
 
+// groupedReceiptMessageID returns the ID of the message a <participants> node of a
+// grouped receipt is about: the node's own "key" attribute, or, when WhatsApp leaves
+// "key" out and the receipt carries a single <participants> node, the "id" of the
+// <receipt> node itself. With several <participants> nodes and no "key" there is no
+// unambiguous ID, so it returns "".
+func groupedReceiptMessageID(receiptID string, participants *waBinary.Node, participantNodes int) types.MessageID {
+	if key := participants.AttrGetter().OptionalString("key"); key != "" {
+		return key
+	}
+	if participantNodes == 1 {
+		return receiptID
+	}
+	return ""
+}
+
 func (cli *Client) handleGroupedReceipt(partialReceipt events.Receipt, participants *waBinary.Node) (cancelled bool) {
-	pag := participants.AttrGetter()
-	partialReceipt.MessageIDs = []types.MessageID{pag.String("key")}
+	// handleReceipt resolves the ID (groupedReceiptMessageID) and passes it in
+	// partialReceipt.MessageIDs; a direct caller that does not falls back to "key".
+	messageID := participants.AttrGetter().OptionalString("key")
+	if len(partialReceipt.MessageIDs) == 1 && partialReceipt.MessageIDs[0] != "" {
+		messageID = partialReceipt.MessageIDs[0]
+	}
+	if messageID == "" {
+		// Dispatching a receipt with an empty message ID attributes it to no message,
+		// and every such receipt of a chat looks the same to consumers that dedupe on
+		// the ID, so they collapse into one. Skip it and keep the node for diagnosis.
+		cli.Log.Warnf("Grouped receipt participants node has no message ID (no key, receipt id not usable): %s", participants)
+		return
+	}
+	partialReceipt.MessageIDs = []types.MessageID{messageID}
 	for _, child := range participants.GetChildren() {
 		if child.Tag != "user" {
 			cli.Log.Warnf("Unexpected node in grouped receipt participants: %s", &child)
