@@ -273,10 +273,13 @@ func NewClient(deviceStore *store.Device, log waLog.Logger) *Client {
 	baseHTTPClient := &http.Client{
 		Transport: (http.DefaultTransport.(*http.Transport)).Clone(),
 	}
+	websocketHTTPClient := ptr.Clone(baseHTTPClient)
+	// It's a "dial-only" timeout for the websocket client, not a "whole connection" timeout.
+	websocketHTTPClient.Timeout = 30 * time.Second
 	cli := &Client{
 		mediaHTTP:          ptr.Clone(baseHTTPClient),
-		websocketHTTP:      ptr.Clone(baseHTTPClient),
-		preLoginHTTP:       ptr.Clone(baseHTTPClient),
+		websocketHTTP:      ptr.Clone(websocketHTTPClient),
+		preLoginHTTP:       ptr.Clone(websocketHTTPClient),
 		Store:              deviceStore,
 		Log:                log,
 		recvLog:            log.Sub("Recv"),
