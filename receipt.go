@@ -43,9 +43,34 @@ func (cli *Client) handleReceipt(ctx context.Context, node *waBinary.Node) {
 	}
 }
 
+// handleGroupedReceipt dispatches one Receipt per <user> in a grouped receipt.
+//
+// Two shapes exist:
+//
+// 1. "key" field in <participants>, "type" in <receipt> for all users
+//
+//	<receipt from="120363000000000001@g.us" id="AAA" t="1793344591" type="read">
+//	  <participants key="AAA">
+//	    <user jid="200000000000001@lid" t="1793344591"/>
+//	    ...
+//	  </participants>
+//	</receipt>
+//
+// 2. "message_id" in <participants>, "type" in each <user>
+//
+//	<receipt from="120363000000000001@g.us" id="AAA" t="1793344591">
+//	  <participants message_id="AAA">
+//	    <user jid="200000000000001@lid" t="1793344591" type="delivery"/>
+//	    ...
+//	  </participants>
+//	</receipt>
 func (cli *Client) handleGroupedReceipt(partialReceipt events.Receipt, participants *waBinary.Node) (cancelled bool) {
 	pag := participants.AttrGetter()
-	partialReceipt.MessageIDs = []types.MessageID{pag.String("key")}
+	partialReceipt.MessageIDs = []types.MessageID{pag.OptionalString("key")}
+	if partialReceipt.MessageIDs[0] == "" {
+		partialReceipt.MessageIDs = []types.MessageID{pag.String("message_id")}
+		partialReceipt.Type = types.ReceiptTypeDelivered
+	}
 	for _, child := range participants.GetChildren() {
 		if child.Tag != "user" {
 			cli.Log.Warnf("Unexpected node in grouped receipt participants: %s", &child)
@@ -55,6 +80,13 @@ func (cli *Client) handleGroupedReceipt(partialReceipt events.Receipt, participa
 		receipt := partialReceipt
 		receipt.Timestamp = ag.UnixTime("t")
 		receipt.MessageSource.Sender = ag.JID("jid")
+		if userType := ag.OptionalString("type"); userType != "" {
+			// Type comes from <user type="...">, not from <receipt type="...">
+			receipt.Type = types.ReceiptType(userType)
+			if userType == "delivery" {
+				receipt.Type = types.ReceiptTypeDelivered
+			}
+		}
 		if !ag.OK() {
 			cli.Log.Warnf("Failed to parse user node %s in grouped receipt: %v", &child, ag.Error())
 			continue
