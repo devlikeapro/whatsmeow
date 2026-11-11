@@ -311,6 +311,9 @@ func buildBaseReceipt(id string, node *waBinary.Node) waBinary.Attrs {
 
 func (cli *Client) sendMessageReceipt(ctx context.Context, info *types.MessageInfo, node *waBinary.Node) {
 	attrs := buildBaseReceipt(info.ID, node)
+	if node.Tag == "status" {
+		attrs["class"] = "status"
+	}
 	if info.IsFromMe {
 		attrs["type"] = string(types.ReceiptTypeSender)
 		if info.Type == "peer_msg" {

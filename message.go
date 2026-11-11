@@ -76,7 +76,8 @@ func (cli *Client) handleUnencryptedMessage(ctx context.Context, node *waBinary.
 		return
 	}
 	if info.Sender.Server != types.NewsletterServer {
-		cli.sendAck(ctx, node, 0)
+		// group statuses and some personal statuses come as encrypted <status> stanzas
+		cli.handleEncryptedMessage(ctx, node)
 		return
 	}
 	info.IsNewsletterStatus = true
